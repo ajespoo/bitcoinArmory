@@ -9,6 +9,8 @@ from colortools import *
 
 BDM_LoadBlockchainFile()
 
+DEBUG = False
+
 def get_parent_inputs (pytx, index):
     inputs = []
     for i,inp in enumerate(pytx.inputs):
@@ -30,6 +32,9 @@ def get_parent_inputs (pytx, index):
       if inp[1] == outputs[index][1]: parents.append(i)
     return parents
 
+def hextobin(x): return hex_to_binary(x,endIn=LITTLEENDIAN, endOut=BIGENDIAN)
+def bintohex(x): return binary_to_hex(x,endIn=LITTLEENDIAN, endOut=BIGENDIAN)
+
 def search_for_color (txhash,index):
     issues = {}
     for cdef in color_definitions:
@@ -37,26 +42,27 @@ def search_for_color (txhash,index):
             issues[i["txhash"]+str(i["outindex"])] = cdef[0]
     heap = []
 
-    mytx = TheBDM.getTxByHash(hex_to_binary(txhash))
-    if mytx.getTxIn(0).isCoinbase(): return -1
+    mytx = TheBDM.getTxByHash(hextobin(txhash))
+    if mytx.getTxIn(0).isCoinbase(): return None
 
     heappush(heap,[0,mytx,index])
 
     while len(heap) > 0:
         top = heappop(heap)
         # Matches color issue, return color
-        if top[1].getThisHash()+str(top[2]) in issues: 
-            return issues[top[1].getThisHash()+str(top[2])]
+        hexhash = bintohex(top[1].getThisHash())
+        if hexhash+str(top[2]) in issues: 
+            return issues[hexhash+str(top[2])]
         # Get parent tx
         txp_outpoint = top[1].getTxIn(top[2]).getOutPoint()
         txparent = TheBDM.getTxByHash(txp_outpoint.getTxHash())
         # Is parent coinbase, return -1
         if txparent.getTxIn(0).isCoinbase():
             return -1
-        print binary_to_hex(txp_outpoint.getTxHash()),txp_outpoint.getTxOutIndex()
+        if DEBUG: 
+          print bintohex(txp_outpoint.getTxHash()),txp_outpoint.getTxOutIndex()
         for p in get_parent_inputs(PyTx().unserialize(txparent.serialize()),txp_outpoint.getTxOutIndex()):
             # Modify the top[0] + 1 to make a different search algorithm
             heappush(heap,[top[0]+1,txparent,p])
+    return None
 
-print search_for_color('6e48773b62a6f4a784d8fa75911859cb8de5eb3f9a6eb89587f7320bd16c58b1',0)
-print search_for_color('8f6c8751f39357cd42af97a67301127d497597ae699ad0670b4f649bd9e39abf',0)
