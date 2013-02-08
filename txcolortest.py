@@ -14,3 +14,5 @@ print g.search_for_color('342f119db7f9989f594d0f27e37bb5d652a3093f170de928b9ab7e
 print g.search_for_color('bd34141daf5138f62723009666b013e2682ac75a4264f088e75dbd6083fa2dba',0), "== Blue (complex chain TX)"
 print g.search_for_color('bd34141daf5138f62723009666b013e2682ac75a4264f088e75dbd6083fa2dba',1), "== None (mining fee change output)"
 print g.search_for_color('36af9510f65204ec5532ee62d3785584dc42a964013f4d40cfb8b94d27b30aa1',0), "== Red (complex chain TX)"
+print g.search_for_color('741a53bf925510b67dc0d69f33eb2ad92e0a284a3172d4e82e2a145707935b3e',0), "== Red (complex chain TX)"
+print g.search_for_color('741a53bf925510b67dc0d69f33eb2ad92e0a284a3172d4e82e2a145707935b3e',1), "== Red (complex chain TX)"
