@@ -4,13 +4,17 @@ import json
 import connector
 from armoryengine import *
 import urllib2
+import heapq
 from colortools import *
 
 BDM_LoadBlockchainFile()
 
 DEBUG = False
 
-def get_parent_inputs (pytx, index,indent=0):
+COLOR_UNKNOWN = -2
+COLOR_UNCOLORED = None
+
+def get_matching_inputs (pytx, index,indent=0):
     inputs = []
     for i,inp in enumerate(pytx.inputs):
         txhash = inp.outpoint.txHash
@@ -32,50 +36,92 @@ def get_parent_inputs (pytx, index,indent=0):
         print "   " * indent, inputs, PSI, " | " , outputs, PSO, " (index = %d" % index
 
     # Get all inputs that flow into the given output
-    parents = []
+    children = []
     for i,inp in enumerate(inputs):
         if PSI[i] < PSO[index+1] and PSI[i+1] > PSO[index]: 
-            parents.append(i)
-    return parents
+            children.append(i)
+    return children
 
 def hextobin(x): return hex_to_binary(x,endIn=LITTLEENDIAN, endOut=BIGENDIAN)
 def bintohex(x): return binary_to_hex(x,endIn=LITTLEENDIAN, endOut=BIGENDIAN)
 
-def search_for_color_binhash (txhash,index,issues,indent=0):
+# Debugging method
+def tree_print(t,visited,indent=0):
+    print " "*(indent*3) + str(t["color"]) + " " + str(t["complete"]) + " " + bintohex(t["txhash"]) + " " + str(t["index"])
+    for c in [visited[x] for x in t["children"]]:
+      tree_print(c,visited,indent+1)
 
-
-    if DEBUG: 
-        print "   " * indent + bintohex(txhash), "Index: " + str(index)
-
-    mytx = TheBDM.getTxByHash(txhash)
-    # Is coinbase, return uncolored
-    if mytx.getTxIn(0).isCoinbase(): return None
-
-    # Matches color issue, return color
-    hexhash = bintohex(txhash)
-    if hexhash+str(index) in issues: 
-        return issues[hexhash+str(index)]
-    
-    # Get parent inputs
-    parents = get_parent_inputs(PyTx().unserialize(mytx.serialize()),index,indent)
-
-    pc = []
-    for p in parents:
-      # Get parent tx
-      txp_outpoint = mytx.getTxIn(p).getOutPoint()
-
-
-      # Recursive search is required since we need to make sure that ALL parent inputs are of the same color
-      # for the output to be colored (any mixing leads to uncolored coins)
-      pc.append(search_for_color_binhash(txp_outpoint.getTxHash(),txp_outpoint.getTxOutIndex(),issues,indent+1))
-      if pc[-1] == None: return None
-      if len(pc) > 1 and pc[-1] != pc[-2]: return None
-    if len(pc) == 0: return None
-    return pc[0]
-
-def search_for_color(txhash, inp):
+def search_for_color (hex_txhash,index):
     issues = {}
     for cdef in color_definitions:
         for i in cdef[1]["issues"]:
             issues[i["txhash"]+str(i["outindex"])] = cdef[0]
-    return search_for_color_binhash(hextobin(txhash),inp,issues)
+
+    txhash = hextobin(hex_txhash)
+    visited = {txhash:
+                  {"parent":None,
+                   "txhash":txhash,
+                   "index":index,
+                   "color":COLOR_UNKNOWN,
+                   "complete":False,
+                   "children":[]}}
+
+    heap = [txhash]
+
+    def visit_node(thash):
+        full_eval = True
+        node = visited[thash]
+        if not node["complete"]:
+            node["complete"] = True
+            for c in [visited[x] for x in node["children"]]:
+                if c["color"] == node["color"]:
+                    pass
+                elif c["color"] != COLOR_UNKNOWN:
+                    if node["color"] == COLOR_UNKNOWN:
+                        node["color"] = c["color"]
+                    else:
+                        node["color"] = COLOR_UNCOLORED
+                        node["complete"] = True
+                if c["complete"] == False:
+                    node["complete"] = False
+        if node["parent"] is not None:
+            return visit_node(node["parent"])
+        else:
+            if node["complete"]:
+                return (True, node["color"])
+            return (False, None)
+
+    while len(heap) > 0:
+        curtx = heapq.heappop(heap)
+        curnode = visited[curtx]
+        curind = curnode["index"]
+        mytx = TheBDM.getTxByHash(curtx)
+        # Is coinbase, return uncolored
+        if mytx.getTxIn(0).isCoinbase():
+            curnode["color"] = COLOR_UNCOLORED
+            curnode["complete"] = True
+            return visit_node(curtx)[1]
+        # Matches color issue, return color
+        hexhash = bintohex(curtx)
+        if hexhash+str(curind) in issues: 
+            curnode["color"] = issues[hexhash+str(curind)]
+            curnode["complete"] = True
+            done,col = visit_node(curtx)
+            if done: return col
+        else:
+        # Get children of node
+            children = get_matching_inputs(PyTx().unserialize(mytx.serialize()),curind,indent)
+            for c in children:
+                txp_outpoint = mytx.getTxIn(c).getOutPoint()
+                newhash = txp_outpoint.getTxHash()
+                newnode = {"txhash":newhash,
+                           "index":txp_outpoint.getTxOutIndex(),
+                           "complete":False,
+                           "color":COLOR_UNKNOWN,
+                           "parent":curtx,
+                           "children":[]}
+                if newhash not in visited:
+                    heapq.heappush(heap,newhash)
+                visited[newhash] = newnode
+                curnode["children"].append(newhash)
+    return None if visited[txhash]["color"] in (COLOR_UNKNOWN, COLOR_UNCOLORED) else visited[txhash]["color"]
