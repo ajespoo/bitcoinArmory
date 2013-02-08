@@ -14,7 +14,7 @@ DEBUG = False
 COLOR_UNKNOWN = -2
 COLOR_UNCOLORED = None
 
-def get_matching_inputs (pytx, index,indent=0):
+def get_matching_inputs (pytx, index):
     inputs = []
     for i,inp in enumerate(pytx.inputs):
         txhash = inp.outpoint.txHash
@@ -33,7 +33,7 @@ def get_matching_inputs (pytx, index,indent=0):
     PSO = reduce(lambda x,y: x + [x[-1]+y[0]], [[0]]+outputs)
     
     if DEBUG:
-        print "   " * indent, inputs, PSI, " | " , outputs, PSO, " (index = %d" % index
+        print inputs, PSI, " | " , outputs, PSO, " (index = %d" % index
 
     # Get all inputs that flow into the given output
     children = []
@@ -46,10 +46,10 @@ def hextobin(x): return hex_to_binary(x,endIn=LITTLEENDIAN, endOut=BIGENDIAN)
 def bintohex(x): return binary_to_hex(x,endIn=LITTLEENDIAN, endOut=BIGENDIAN)
 
 # Debugging method
-def tree_print(t,visited,indent=0):
+def print_tree(t,visited,indent=0):
     print " "*(indent*3) + str(t["color"]) + " " + str(t["complete"]) + " " + bintohex(t["txhash"]) + " " + str(t["index"])
     for c in [visited[x] for x in t["children"]]:
-      tree_print(c,visited,indent+1)
+      print_tree(c,visited,indent+1)
 
 def search_for_color (hex_txhash,index):
     issues = {}
@@ -100,6 +100,7 @@ def search_for_color (hex_txhash,index):
         if mytx.getTxIn(0).isCoinbase():
             curnode["color"] = COLOR_UNCOLORED
             curnode["complete"] = True
+            if DEBUG: print_tree(visited[txhash],visited)
             return visit_node(curtx)[1]
         # Matches color issue, return color
         hexhash = bintohex(curtx)
@@ -107,10 +108,12 @@ def search_for_color (hex_txhash,index):
             curnode["color"] = issues[hexhash+str(curind)]
             curnode["complete"] = True
             done,col = visit_node(curtx)
-            if done: return col
+            if done:
+                if DEBUG: print_tree(visited[txhash],visited)
+                return col
         else:
         # Get children of node
-            children = get_matching_inputs(PyTx().unserialize(mytx.serialize()),curind,indent)
+            children = get_matching_inputs(PyTx().unserialize(mytx.serialize()),curind)
             for c in children:
                 txp_outpoint = mytx.getTxIn(c).getOutPoint()
                 newhash = txp_outpoint.getTxHash()
@@ -124,4 +127,5 @@ def search_for_color (hex_txhash,index):
                     heapq.heappush(heap,newhash)
                 visited[newhash] = newnode
                 curnode["children"].append(newhash)
+    if DEBUG: print_tree(visited[txhash],visited)
     return None if visited[txhash]["color"] in (COLOR_UNKNOWN, COLOR_UNCOLORED) else visited[txhash]["color"]
