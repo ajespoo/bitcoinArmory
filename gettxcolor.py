@@ -47,7 +47,7 @@ def bintohex(x): return binary_to_hex(x,endIn=LITTLEENDIAN, endOut=BIGENDIAN)
 
 # Debugging method
 def print_tree(t,visited,indent=0):
-    print " "*(indent*3) + str(t["color"]) + " " + str(t["complete"]) + " " + bintohex(t["txhash"]) + " " + str(t["index"])
+    print " "*(indent*3) + str(t["color"]) + " " + bintohex(t["txhash"]) + " " + str(t["index"])
     for c in [visited[x] for x in t["children"]]:
       print_tree(c,visited,indent+1)
 
@@ -58,17 +58,20 @@ def search_for_color (hex_txhash,index):
             issues[i["txhash"]+str(i["outindex"])] = cdef[0]
 
     txhash = hextobin(hex_txhash)
-    visited = {txhash: {"parent":None,
-                        "txhash":txhash,
-                        "index":index,
-                        "color":COLOR_UNKNOWN,
-                        "children":[]}}
 
-    heap = [txhash]
+    def key(txhash,index): return txhash + " " + str(index)
 
-    def visit_node(thash):
+    visited = {key(txhash,index): {"parent":None,
+                                   "txhash":txhash,
+                                   "index":index,
+                                   "color":COLOR_UNKNOWN,
+                                   "children":[]}}
+
+    heap = [(txhash, index)]
+
+    def visit_node(vindex):
         full_eval = True
-        node = visited[thash]
+        node = visited[vindex]
         while node["parent"]:
             p = visited[node["parent"]]
             if p["color"] == COLOR_UNKNOWN: p["color"] = node["color"]
@@ -77,9 +80,8 @@ def search_for_color (hex_txhash,index):
         return node["color"]
 
     while len(heap) > 0:
-        curtx = heapq.heappop(heap)
-        curnode = visited[curtx]
-        curind = curnode["index"]
+        curtx, curind = heapq.heappop(heap)
+        curnode = visited[key(curtx, curind)]
         mytx = TheBDM.getTxByHash(curtx)
         # Is coinbase, return uncolored
         if mytx.getTxIn(0).isCoinbase():
@@ -88,21 +90,22 @@ def search_for_color (hex_txhash,index):
         hexhash = bintohex(curtx)
         if hexhash+str(curind) in issues: 
             curnode["color"] = issues[hexhash+str(curind)]
-            visit_node(curtx)
+            visit_node(key(curtx,curind))
         else:
         # Get children of node
             children = get_matching_inputs(PyTx().unserialize(mytx.serialize()),curind)
             for c in children:
                 txp_outpoint = mytx.getTxIn(c).getOutPoint()
-                newhash = txp_outpoint.getTxHash()
+                newhash, newind = txp_outpoint.getTxHash(), txp_outpoint.getTxOutIndex()
                 newnode = {"txhash":newhash,
-                           "index":txp_outpoint.getTxOutIndex(),
+                           "index":newind,
                            "color":COLOR_UNKNOWN,
-                           "parent":curtx,
+                           "parent":key(curtx,curind),
                            "children":[]}
-                if newhash not in visited:
-                    heapq.heappush(heap,newhash)
-                    visited[newhash] = newnode
+                if (key(newhash,newind)) not in visited:
+                    heapq.heappush(heap,(newhash,newind))
+                    visited[key(newhash,newind)] = newnode
                 curnode["children"].append(newhash)
     if DEBUG: print_tree(visited[txhash],visited)
-    return None if visited[txhash]["color"] in (COLOR_UNKNOWN, COLOR_UNCOLORED) else visited[txhash]["color"]
+    c = visited[key(txhash,index)]["color"]
+    return None if c in (COLOR_UNKNOWN, COLOR_UNCOLORED) else c
