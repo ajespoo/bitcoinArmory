@@ -58,38 +58,23 @@ def search_for_color (hex_txhash,index):
             issues[i["txhash"]+str(i["outindex"])] = cdef[0]
 
     txhash = hextobin(hex_txhash)
-    visited = {txhash:
-                  {"parent":None,
-                   "txhash":txhash,
-                   "index":index,
-                   "color":COLOR_UNKNOWN,
-                   "complete":False,
-                   "children":[]}}
+    visited = {txhash: {"parent":None,
+                        "txhash":txhash,
+                        "index":index,
+                        "color":COLOR_UNKNOWN,
+                        "children":[]}}
 
     heap = [txhash]
 
     def visit_node(thash):
         full_eval = True
         node = visited[thash]
-        if not node["complete"]:
-            node["complete"] = True
-            for c in [visited[x] for x in node["children"]]:
-                if c["color"] == node["color"]:
-                    pass
-                elif c["color"] != COLOR_UNKNOWN:
-                    if node["color"] == COLOR_UNKNOWN:
-                        node["color"] = c["color"]
-                    else:
-                        node["color"] = COLOR_UNCOLORED
-                        node["complete"] = True
-                if c["complete"] == False:
-                    node["complete"] = False
-        if node["parent"] is not None:
-            return visit_node(node["parent"])
-        else:
-            if node["complete"]:
-                return (True, node["color"])
-            return (False, None)
+        while node["parent"]:
+            p = visited[node["parent"]]
+            if p["color"] == COLOR_UNKNOWN: p["color"] = node["color"]
+            elif p["color"] != node["color"]: p["color"] == COLOR_UNCOLORED
+            node = p
+        return node["color"]
 
     while len(heap) > 0:
         curtx = heapq.heappop(heap)
@@ -98,19 +83,12 @@ def search_for_color (hex_txhash,index):
         mytx = TheBDM.getTxByHash(curtx)
         # Is coinbase, return uncolored
         if mytx.getTxIn(0).isCoinbase():
-            curnode["color"] = COLOR_UNCOLORED
-            curnode["complete"] = True
-            if DEBUG: print_tree(visited[txhash],visited)
-            return visit_node(curtx)[1]
+            return COLOR_UNCOLORED
         # Matches color issue, return color
         hexhash = bintohex(curtx)
         if hexhash+str(curind) in issues: 
             curnode["color"] = issues[hexhash+str(curind)]
-            curnode["complete"] = True
-            done,col = visit_node(curtx)
-            if done:
-                if DEBUG: print_tree(visited[txhash],visited)
-                return col
+            visit_node(curtx)
         else:
         # Get children of node
             children = get_matching_inputs(PyTx().unserialize(mytx.serialize()),curind)
@@ -119,13 +97,12 @@ def search_for_color (hex_txhash,index):
                 newhash = txp_outpoint.getTxHash()
                 newnode = {"txhash":newhash,
                            "index":txp_outpoint.getTxOutIndex(),
-                           "complete":False,
                            "color":COLOR_UNKNOWN,
                            "parent":curtx,
                            "children":[]}
                 if newhash not in visited:
                     heapq.heappush(heap,newhash)
-                visited[newhash] = newnode
+                    visited[newhash] = newnode
                 curnode["children"].append(newhash)
     if DEBUG: print_tree(visited[txhash],visited)
     return None if visited[txhash]["color"] in (COLOR_UNKNOWN, COLOR_UNCOLORED) else visited[txhash]["color"]
