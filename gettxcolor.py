@@ -68,6 +68,7 @@ def search_for_color (hex_txhash,index):
                                    "children":[]}}
 
     heap = [(txhash, index)]
+    root = visited[key(txhash,index)]
 
     def visit_node(vindex):
         full_eval = True
@@ -91,6 +92,7 @@ def search_for_color (hex_txhash,index):
         if hexhash+str(curind) in issues: 
             curnode["color"] = issues[hexhash+str(curind)]
             visit_node(key(curtx,curind))
+            if root["color"] == COLOR_UNCOLORED: return None
         else:
         # Get children of node
             children = get_matching_inputs(PyTx().unserialize(mytx.serialize()),curind)
@@ -107,5 +109,4 @@ def search_for_color (hex_txhash,index):
                     visited[key(newhash,newind)] = newnode
                 curnode["children"].append(newhash)
     if DEBUG: print_tree(visited[txhash],visited)
-    c = visited[key(txhash,index)]["color"]
-    return None if c in (COLOR_UNKNOWN, COLOR_UNCOLORED) else c
+    return None if root["color"] in (COLOR_UNKNOWN, COLOR_UNCOLORED) else root["color"]
